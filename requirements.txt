@@ -1,4 +1,42 @@
-fastapi
-uvicorn[standard]
-sqlmodel
-pydantic
+# Core
+fastapi==0.115.5
+uvicorn[standard]==0.32.1
+sqlmodel==0.0.21
+pydantic==2.10.3
+pydantic-settings==2.6.1
+
+# Async DB
+asyncpg==0.30.0
+aiosqlite==0.20.0
+alembic==1.14.0
+
+# Audio I/O
+aiofiles==24.1.0
+python-multipart==0.0.18
+pydub==0.25.1
+
+# ASR (Groq Whisper API)
+httpx==0.28.1
+tenacity==9.0.0
+
+numpy==2.2.5
+
+# Speaker embeddings — install CPU-only torch first:
+#   pip install torch --index-url https://download.pytorch.org/whl/cpu
+#   pip install speechbrain==1.0.2
+# speechbrain==1.0.2      # uncomment for production
+# pyannote.audio==3.3.2   # alternative; requires HuggingFace token
+
+# Fuzzy command matching
+rapidfuzz==3.10.1
+
+# Frontend templates
+jinja2==3.1.4
+
+# Tests
+pytest==8.3.4
+pytest-asyncio==0.24.0
+pytest-cov==6.0.0
+
+# Lint / format
+ruff==0.8.4

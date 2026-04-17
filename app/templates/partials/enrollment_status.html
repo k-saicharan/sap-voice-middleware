@@ -1,0 +1,20 @@
+{% if status.status == "complete" %}
+<div class="alert alert-success mb-0">
+  <strong>&#10003; Voice profile active</strong><br>
+  <small>Re-record anytime to update the profile.</small>
+</div>
+{% elif status.status == "in_progress" %}
+<div class="alert alert-warning mb-0">
+  <strong>Recording uploaded</strong><br>
+  <small>Call finalize to compute the voice profile.</small>
+</div>
+{% else %}
+<div class="text-muted text-center py-3">
+  No recordings yet.
+</div>
+{% endif %}
+{% if status.last_transcription %}
+<hr>
+<small class="text-muted">Last transcription preview:</small>
+<p class="small font-monospace mt-1">"{{ status.last_transcription[:120] }}{% if status.last_transcription|length > 120 %}...{% endif %}"</p>
+{% endif %}

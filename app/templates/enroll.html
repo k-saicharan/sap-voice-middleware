@@ -1,0 +1,154 @@
+{% extends "base.html" %}
+{% block title %}Enroll {{ worker_id }} — SAP Voice Middleware{% endblock %}
+
+{% block content %}
+<div class="mb-3">
+  <a href="/dashboard/" class="text-decoration-none text-muted">&larr; Back to workers</a>
+</div>
+
+<h4>Voice Enrollment &mdash; <code>{{ worker_id }}</code></h4>
+
+{% if not gdpr_consent %}
+<div class="alert alert-warning mt-3">
+  <strong>GDPR consent required</strong> before enrollment.
+  Update this worker's profile with <code>gdpr_consent: true</code> via the API first.
+  <br><small>Speaker embeddings are biometric data under GDPR Art. 4(14). Consent must be explicit and recorded.</small>
+</div>
+{% else %}
+
+<div class="row mt-3 g-4">
+  <div class="col-lg-7">
+    <div class="card shadow-sm">
+      <div class="card-header bg-primary text-white">
+        <strong>Step 1 &mdash; Read this passage aloud</strong>
+      </div>
+      <div class="card-body passage-card">
+        <p class="mb-0">{{ passage }}</p>
+      </div>
+      <div class="card-footer text-muted small">
+        Read at your normal pace &mdash; approximately 30 seconds. The system learns your voice from any natural speech.
+      </div>
+    </div>
+
+    <div class="card shadow-sm mt-3">
+      <div class="card-header"><strong>Step 2 &mdash; Record yourself reading</strong></div>
+      <div class="card-body">
+        <div id="waveform-container" class="mb-3 d-flex align-items-center justify-content-center">
+          <span class="text-white-50 small" id="waveform-label">Press Start to begin recording</span>
+        </div>
+        <div class="d-flex gap-2 align-items-center">
+          <button id="btn-start" class="btn btn-success">&#9679; Start Recording</button>
+          <button id="btn-stop" class="btn btn-danger d-none">&#9632; Stop &amp; Submit</button>
+          <span id="timer" class="text-muted ms-2 font-monospace"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-5">
+    <div class="card shadow-sm">
+      <div class="card-header"><strong>Enrollment Status</strong></div>
+      <div class="card-body" id="status-panel"
+           hx-get="/workers/{{ worker_id }}/enroll/status"
+           hx-trigger="load, statusRefresh from:body"
+           hx-swap="innerHTML">
+        <div class="text-center text-muted py-3">Loading&hellip;</div>
+      </div>
+    </div>
+
+    <div id="result-panel" class="mt-3"></div>
+  </div>
+</div>
+
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if gdpr_consent %}
+<script>
+const workerId = {{ worker_id | tojson }};
+let mediaRecorder, chunks = [], timerInterval, startTime;
+
+document.getElementById('btn-start').addEventListener('click', async () => {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    chunks = [];
+    mediaRecorder = new MediaRecorder(stream);
+    mediaRecorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
+    mediaRecorder.onstop = submitRecording;
+    mediaRecorder.start(100);
+
+    document.getElementById('btn-start').classList.add('d-none');
+    document.getElementById('btn-stop').classList.remove('d-none');
+    document.getElementById('waveform-label').textContent = 'Recording...';
+
+    startTime = Date.now();
+    timerInterval = setInterval(() => {
+      const s = Math.floor((Date.now() - startTime) / 1000);
+      document.getElementById('timer').textContent = `${s}s`;
+    }, 500);
+  } catch (err) {
+    alert('Microphone access denied: ' + err.message);
+  }
+});
+
+document.getElementById('btn-stop').addEventListener('click', () => {
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+    mediaRecorder.stop();
+    mediaRecorder.stream.getTracks().forEach(t => t.stop());
+  }
+  clearInterval(timerInterval);
+  document.getElementById('btn-stop').classList.add('d-none');
+  document.getElementById('waveform-label').textContent = 'Processing...';
+});
+
+async function submitRecording() {
+  const durationMs = Date.now() - startTime;
+  const blob = new Blob(chunks, { type: chunks[0]?.type || 'audio/webm' });
+  const formData = new FormData();
+  formData.append('audio', blob, 'calibration.webm');
+  formData.append('duration_ms', durationMs);
+
+  const resultPanel = document.getElementById('result-panel');
+  resultPanel.innerHTML = '<div class="alert alert-info">Uploading and processing&hellip;</div>';
+
+  try {
+    const uploadRes = await fetch(`/workers/${workerId}/enroll/recording`, {
+      method: 'POST', body: formData
+    });
+    if (!uploadRes.ok) {
+      const err = await uploadRes.json();
+      resultPanel.innerHTML = `<div class="alert alert-danger"><strong>Error:</strong> ${err.detail || 'Upload failed'}</div>`;
+      resetButtons();
+      return;
+    }
+
+    resultPanel.innerHTML = '<div class="alert alert-info">Computing voice profile&hellip;</div>';
+    const finalRes = await fetch(`/workers/${workerId}/enroll/finalize`, { method: 'POST' });
+    if (!finalRes.ok) {
+      const err = await finalRes.json();
+      resultPanel.innerHTML = `<div class="alert alert-danger"><strong>Finalize error:</strong> ${err.detail}</div>`;
+      resetButtons();
+      return;
+    }
+
+    resultPanel.innerHTML = `<div class="alert alert-success">
+      <strong>&#10003; Voice profile saved!</strong><br>
+      Audio deleted per GDPR policy. Only the voice embedding is retained.
+    </div>`;
+    htmx.trigger(document.body, 'statusRefresh');
+  } catch (e) {
+    resultPanel.innerHTML = `<div class="alert alert-danger">Network error: ${e.message}</div>`;
+  }
+
+  resetButtons();
+}
+
+function resetButtons() {
+  document.getElementById('btn-start').classList.remove('d-none');
+  document.getElementById('waveform-label').textContent = 'Press Start to record again';
+  document.getElementById('timer').textContent = '';
+}
+</script>
+{% endif %}
+{% endblock %}
