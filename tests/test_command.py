@@ -1,4 +1,3 @@
-import pytest
 from app.services.command import fuzzy_match_command, CALIBRATION_PASSAGE, SAP_COMMANDS
 
 

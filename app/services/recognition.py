@@ -78,7 +78,6 @@ def _cosine_similarity_sync(
     content_type: str,
     stored_embedding_json: str,
 ) -> float:
-    import io
     import numpy as np
 
     stored = np.array(json.loads(stored_embedding_json), dtype=np.float32)
@@ -111,7 +110,6 @@ def _compute_input_embedding(audio_bytes: bytes, content_type: str) -> Optional[
 def _embed_input_speechbrain(audio_bytes: bytes, content_type: str):
     import io
     import numpy as np
-    import torch
     import torchaudio
     from speechbrain.inference.speaker import EncoderClassifier
 
