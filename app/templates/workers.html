@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}Workers — SAP Voice Middleware{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h4 class="mb-0">Workers <span class="badge bg-secondary">{{ workers|length }}</span></h4>
+  <button class="btn btn-sm btn-outline-secondary"
+          hx-post="/seed/demo"
+          hx-target="#worker-table"
+          hx-swap="outerHTML"
+          hx-confirm="Load 3 demo workers?">
+    Seed Demo Data
+  </button>
+</div>
+
+<div class="card shadow-sm">
+  <div class="table-responsive">
+    <table class="table table-hover mb-0" id="worker-table">
+      <thead class="table-dark">
+        <tr>
+          <th>Worker ID</th>
+          <th>Locale</th>
+          <th>Enrollment</th>
+          <th>GDPR Consent</th>
+          <th>Word Mappings</th>
+          <th>Updated</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for w in workers %}
+        <tr>
+          <td><code>{{ w.worker_id }}</code></td>
+          <td>{{ w.locale }}</td>
+          <td>
+            <span class="badge status-badge-{{ w.enrollment_status }}">
+              {{ w.enrollment_status }}
+            </span>
+          </td>
+          <td>
+            {% if w.gdpr_consent %}
+              <span class="text-success">&#10003; Consented</span>
+            {% else %}
+              <span class="text-muted">Not set</span>
+            {% endif %}
+          </td>
+          <td>{{ w.speech_word_mapping|length }} mappings</td>
+          <td><small class="text-muted">{{ w.updated_at[:19].replace("T", " ") }}</small></td>
+          <td>
+            <a href="/dashboard/workers/{{ w.worker_id }}/enroll" class="btn btn-sm btn-primary">
+              {% if w.enrollment_status == "complete" %}Re-enroll{% else %}Enroll{% endif %}
+            </a>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="7" class="text-center text-muted py-4">
+            No workers yet. <a href="#" hx-post="/seed/demo" hx-target="body" hx-swap="none">Seed demo data</a> to get started.
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
