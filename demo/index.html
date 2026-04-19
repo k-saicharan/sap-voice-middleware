@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SAP Voice Middleware Prototype</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #000; color: #ffffff; display: flex; height: 100vh; margin: 0; overflow: hidden; }
+        .viewfinder { flex: 0 0 60%; position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #000; border-right: 1px solid #222; overflow: hidden; }
+        .telemetry { flex: 1; padding: 25px; display: flex; flex-direction: column; background: #0a0a0a; overflow-y: auto; height: 100vh; border-left: 1px solid #333; }
+        
+        /* Viewfinder Styles */
+        .corner-marks { position: absolute; width: 100%; height: 100%; pointer-events: none; }
+        .corner-marks::before { content: ''; position: absolute; top: 10%; left: 10%; width: 40px; height: 40px; border-top: 4px solid #00ff00; border-left: 4px solid #00ff00; }
+        .corner-marks::after { content: ''; position: absolute; bottom: 10%; right: 10%; width: 40px; height: 40px; border-bottom: 4px solid #00ff00; border-right: 4px solid #00ff00; }
+        
+        .status-bar { position: absolute; top: 0; width: 100%; background: rgba(0,0,0,0.7); display: flex; justify-content: space-between; padding: 5px 20px; box-sizing: border-box; font-size: 14px; color: #aaa; }
+        
+        .bin-location { font-size: 3em; font-weight: bold; margin-bottom: 10px; color: #fff; }
+        .task-detail { font-size: 1.5em; color: #ddd; margin-bottom: 20px; }
+        
+        .instruction { font-size: 1.2em; color: #00ffff; text-shadow: 0px 0px 5px #00ffff; margin-bottom: 20px; }
+        
+        .floating-btn { padding: 10px 20px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.3); color: #fff; cursor: pointer; border-radius: 5px; font-size: 1em; pointer-events: auto;}
+        .floating-btn:hover { background: rgba(255,255,255,0.2); }
+        
+        .check-mark { position: absolute; top: 15%; right: 15%; font-size: 5em; color: #00ff00; display: none; text-shadow: 0 0 20px #00ff00; }
+        .listening-pulse { position: absolute; bottom: 15%; width: 20px; height: 20px; background-color: rgba(255, 165, 0, 0.8); border-radius: 50%; opacity: 0; }
+        @keyframes pulse { 0% { transform: scale(1); opacity: 0.8; } 100% { transform: scale(3); opacity: 0; } }
+        .listening-pulse.active { animation: pulse 1.5s infinite; }
+        
+        .scan-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,255,0,0.2); display: none; }
+        .error-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255,0,0,0.3); display: none; }
+
+        /* Telemetry Styles */
+        h2 { font-weight: 300; margin-top: 0; border-bottom: 1px solid #444; padding-bottom: 10px; }
+        .log-container { flex: 1; background: #0a0a0a; border: 1px solid #333; border-radius: 5px; padding: 10px; overflow-y: auto; font-family: monospace; font-size: 13px; margin-bottom: 20px; }
+        .log-entry { margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px dashed #222; }
+        .log-entry.wearhf { color: #aaaaac; }
+        .log-entry.middleware { color: #00ffcc; }
+        .log-time { color: #555; }
+        .json-key { color: #e06c75; }
+        .json-string { color: #98c379; }
+        .json-number { color: #d19a66; }
+        .log-container { flex: 1; background: #111; border-radius: 8px; padding: 15px; overflow-y: auto; font-family: 'Consolas', monospace; font-size: 12px; }
+
+        /* SAP Dashboard Styles */
+        .sap-frame { background: #fff; color: #333; border-radius: 8px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); width: 400px; margin-top: 20px; overflow: hidden; display: flex; flex-direction: column; }
+        .sap-header { background: #2f3e4b; color: #fff; padding: 12px 20px; font-weight: bold; font-size: 0.9em; display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid #007cc0; }
+        .picking-content { padding: 25px; flex: 1; display: flex; flex-direction: column; gap: 20px; }
+        .quantity-display { background: #f4f7f9; border-radius: 12px; padding: 20px; text-align: center; border: 1px solid #e2e8ed; }
+        .status-box { background: #fff8e1; border: 1px solid #ffe082; color: #856404; padding: 12px; border-radius: 8px; text-align: center; font-size: 0.85em; font-weight: bold; }
+        .sap-footer { background: #f4f7f9; padding: 15px 20px; border-top: 1px solid #e2e8ed; display: flex; gap: 10px; }
+        .sap-btn { padding: 10px 18px; border-radius: 4px; border: none; font-weight: bold; cursor: pointer; font-size: 0.85em; transition: all 0.2s; }
+        .sap-btn.primary { background: #007cc0; color: #fff; }
+        .sap-btn.primary:hover { background: #006094; }
+        .sap-btn.secondary { background: #fff; color: #007cc0; border: 1px solid #007cc0; }
+        
+        /* Security & Identity Styles */
+        .control-card { background: #1a1a1a; padding: 20px; border-radius: 12px; border: 1px solid #333; }
+        .worker-pill { background: #2e3d48; color: #fff; padding: 4px 12px; border-radius: 20px; font-size: 0.8em; display: flex; align-items: center; gap: 8px; }
+        .worker-pill.unauthorized { background: #ff0055; animation: pulse-red 1.5s infinite; }
+        @keyframes pulse-red {
+            0% { box-shadow: 0 0 0 0 rgba(255, 0, 85, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(255, 0, 85, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(255, 0, 85, 0); }
+        }
+
+        /* Switch Toggle Styling */
+        .switch { position: relative; display: inline-block; width: 44px; height: 24px; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #333; transition: .4s; }
+        .slider:before { position: absolute; content: ""; height: 16px; width: 16px; left: 4px; bottom: 4px; background-color: white; transition: .4s; }
+        input:checked + .slider { background-color: #ff0055; }
+        input:checked + .slider:before { transform: translateX(20px); }
+        .slider.round { border-radius: 34px; }
+        .slider.round:before { border-radius: 50%; }
+
+    </style>
+</head>
+<body>
+
+    <div class="viewfinder">
+        <div class="status-bar">
+            <span>xPick - SAP EWM</span>
+            <span id="reset-container"></span>
+            <span>RealWear Navigator 520</span>
+        </div>
+        <div class="corner-marks"></div>
+        <div class="check-mark" id="checkmark">✔</div>
+        <div class="scan-overlay" id="scan-overlay"></div>
+        <div class="error-overlay" id="error-overlay"></div>
+        
+        <div style="position: absolute; top: 35px; left: 20px;">
+            <button class="floating-btn" style="font-size: 0.8em; background: rgba(255,0,0,0.2); border: 1px solid rgba(255,0,0,0.4);" onclick="resetDemo()">Reset Demo</button>
+        </div>
+
+        <div class="instruction" id="instruction">Loading...</div>
+        <div class="bin-location" id="bin-location">--</div>
+        <div class="task-detail" id="task-detail">--</div>
+        
+        <div id="sim-active-badge" style="display:none; position:absolute; bottom:20px; right:20px; background:#00ff00; color:#000; padding:5px 15px; border-radius:15px; font-weight:bold; font-size:0.8em; box-shadow:0 0 10px #00ff00;">SIMULATION MODE: ACTIVE</div>
+
+        <!-- Simple Standalone View -->
+        <div class="worker-pill" id="worker-pill" style="position: absolute; top: 35px; right: 20px; background: rgba(0,0,0,0.5);">👤 UNKNOWN</div>
+
+        <button class="floating-btn" id="sim-scan" style="position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); font-weight: bold; background: rgba(0, 124, 192, 0.4); border: 1px solid #007cc0;" onclick="simulateScan()">SIMULATE SCAN</button>
+
+        <div class="listening-pulse" id="listening-pulse"></div>
+    </div>
+
+    <!-- Intelligence Sidebar -->
+    <div class="telemetry">
+        <h2 style="margin-top: 0; color: #00ffcc; display: flex; align-items: center; gap: 10px;">
+            🧠 MIDDLEWARE INTELLIGENCE
+        </h2>
+
+        <!-- Security & Identity Controls -->
+        <div class="control-card" style="margin-bottom: 25px; border-top: 3px solid #ff0055;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                <h3 style="margin: 0; color: #ff0055; font-size: 1em;">🔒 VOICE FINGERPRINT LOCK</h3>
+                <div id="enrollment-status" style="font-size: 0.7em; background: #333; padding: 4px 8px; border-radius: 20px;">NOT ENROLLED</div>
+            </div>
+            <p style="font-size: 0.8em; color: #aaa; margin-bottom: 15px;">
+                Locks the SAP session to your specific voice fingerprint.
+            </p>
+            <div style="display: grid; grid-template-columns: 1fr; gap: 10px;">
+                <button class="sap-btn" id="enroll-btn" onclick="enrollVoice()" style="background: #222; border: 1px solid #ff0055; color: #ff0055; width: 100%;">
+                    REGISTER MY VOICE PRINT
+                </button>
+                <div style="background: #1a1a1a; padding: 8px 12px; border-radius: 8px; display: flex; align-items: center; justify-content: space-between;">
+                    <span style="font-size: 0.75em; color: #eee;">Simulate Foreign Voice</span>
+                    <label class="switch">
+                        <input type="checkbox" id="foreign-voice-toggle">
+                        <span class="slider round"></span>
+                    </label>
+                </div>
+            </div>
+        </div>
+
+        <h3 style="font-size: 1em; color: #666; margin-bottom: 15px; border-bottom: 1px solid #222; padding-bottom: 10px;">
+            COMMAND RESOLUTION TIMELINE
+        </h3>
+        <div id="middleware-log" class="log-container" style="flex: 1;">
+            <div class="log-entry" style="color: #444; text-align: center; margin-top: 40px;">
+                Waiting for voice input...
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        
+        function playChime(success) {
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain); gain.connect(audioCtx.destination);
+            if (success) {
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(600, audioCtx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(800, audioCtx.currentTime + 0.1);
+                gain.gain.setValueAtTime(0.5, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
+                osc.start(); osc.stop(audioCtx.currentTime + 0.3);
+            } else {
+                osc.type = 'square';
+                osc.frequency.setValueAtTime(150, audioCtx.currentTime);
+                gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.4);
+                osc.start(); osc.stop(audioCtx.currentTime + 0.4);
+            }
+        }
+
+        const ws = new WebSocket("ws://localhost:8001");
+        ws.onopen = () => { pollState(); setInterval(pollState, 400); };
+        ws.onmessage = (e) => { try { handleTelemetry(JSON.parse(e.data)); } catch(err) {} };
+
+        let currentState = null;
+        let isEnrolled = false;
+        let enrollmentInProgress = false;
+
+        async function pollState() {
+            try {
+                const res = await fetch("http://localhost:8002/api/state");
+                const state = await res.json();
+                updateUI(state);
+            } catch (e) {}
+        }
+
+        function updateUI(state) {
+            currentState = state.current_state;
+            document.getElementById('bin-location').innerText = state.location;
+            document.getElementById('task-detail').innerText = `${state.material} (QTY: ${state.quantity})`;
+            
+            const isScanning = (currentState === "DISPLAY" || currentState === "SCAN");
+            document.getElementById('instruction').innerText = isScanning ? "Say: CAMERA" : `Say: PICK ${state.quantity}`;
+            document.getElementById('sim-scan').style.display = isScanning ? "block" : "none";
+            document.getElementById('sim-active-badge').style.display = isScanning ? "none" : "block";
+            
+            if (currentState === "VOICE") {
+                document.getElementById('listening-pulse').classList.add('active');
+            } else {
+                document.getElementById('listening-pulse').classList.remove('active');
+            }
+        }
+
+        async function simulateScan() {
+            await fetch("http://localhost:8002/api/scan?success=true", { method: "POST" });
+            const overlay = document.getElementById('scan-overlay');
+            overlay.style.display = 'block';
+            playChime(true);
+            setTimeout(() => { overlay.style.display = 'none'; pollState(); }, 300);
+        }
+
+        async function resetDemo() {
+            await fetch("http://localhost:8002/api/reset");
+            document.getElementById('middleware-log').innerHTML = '<div style="color:#444;text-align:center;margin-top:40px;">Waiting for voice input...</div>';
+            pollState();
+        }
+
+        function enrollVoice() {
+            if (enrollmentInProgress) return;
+            if (isEnrolled) { isEnrolled = false; resetEnrollmentUI("FINGERPRINT RESET"); return; }
+
+            const btn = document.getElementById('enroll-btn');
+            btn.innerHTML = "🔴 LISTENING... (Speak now)";
+            btn.style.color = "#ffcc00";
+            document.getElementById('enrollment-status').innerHTML = "ENROLLING...";
+            enrollmentInProgress = true;
+            
+            fetch('http://localhost:8000/workers/WORKER_01/enroll', { method: 'POST' })
+                .catch(() => resetEnrollmentUI("Server Error"));
+
+            setTimeout(() => { if (enrollmentInProgress && !isEnrolled) resetEnrollmentUI("Timeout"); }, 10000);
+        }
+
+        function resetEnrollmentUI(msg) {
+            const btn = document.getElementById('enroll-btn');
+            btn.innerHTML = "REGISTER MY VOICE PRINT";
+            btn.style.color = "#ff0055";
+            document.getElementById('enrollment-status').innerHTML = msg || "NOT ENROLLED";
+            enrollmentInProgress = false;
+        }
+
+        function handleTelemetry(msg) {
+            if (msg.stage === "wearhf_speech_event") {
+                if (enrollmentInProgress) {
+                    isEnrolled = true; enrollmentInProgress = false;
+                    const btn = document.getElementById('enroll-btn');
+                    btn.innerHTML = "✅ FINGERPRINT SECURED"; btn.style.color = "#00ff00";
+                    document.getElementById('enrollment-status').innerHTML = "LOCKED TO WORKER";
+                    document.getElementById('worker-pill').innerHTML = "👤 WORKER_01 (Authorized)";
+                }
+                
+                const container = document.getElementById('middleware-log');
+                const el = document.createElement('div');
+                el.className = "log-entry middleware";
+                el.innerHTML = `
+                    <div style="border-left: 3px solid #ff9800; padding-left: 10px; margin-bottom: 20px;">
+                        <span class="log-time">[${new Date().toLocaleTimeString()}]</span> 
+                        <strong style="color: #ff9800;">LEVEL 1: VOICE CAPTURE</strong>
+                        <div style="font-size: 1.1em; margin: 10px 0;">Raw STT: <span style="color: #fff; background: #333; padding: 2px 6px; border-radius: 4px;">"${msg.payload["com.realwear.wearhf.intent.extra.ORIGINAL_COMMAND"]}"</span></div>
+                        <div class="middleware-step">...processing...</div>
+                    </div>
+                `;
+                container.prepend(el);
+            } 
+            else if (msg.stage === "corrected_command") {
+                const latest = document.querySelector('.log-entry.middleware');
+                if (latest) {
+                    const step = latest.querySelector('.middleware-step');
+                    if (msg.command === "UNAUTHORIZED_SPEAKER") {
+                        step.innerHTML = `<span style="color: #ff0055; font-weight: bold;">🚫 ACCESS DENIED</span>`;
+                    } else {
+                        step.innerHTML = `Mapped: <span style="color: #00ffcc;">${msg.command}</span> (Identity: ${Math.round(msg.speaker_confidence * 100)}%)`;
+                        // 🚀 UNIVERSAL CAMERA LINK
+                        if (msg.command === "CAMERA") simulateScan();
+                    }
+                }
+            }
+            else if (msg.stage === "ux_signal") {
+                if (msg.type === "success") {
+                    playChime(true);
+                    const check = document.getElementById('checkmark');
+                    check.style.display = 'block'; setTimeout(() => { check.style.display = 'none'; }, 1500);
+                } else {
+                    playChime(false);
+                    const overlay = document.getElementById('error-overlay');
+                    overlay.style.display = 'block'; setTimeout(() => { overlay.style.display = 'none'; }, 500);
+                }
+            }
+        }
+    </script>
+</body>
+</html>

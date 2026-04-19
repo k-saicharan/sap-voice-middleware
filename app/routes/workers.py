@@ -61,6 +61,22 @@ async def seed_demo(session: AsyncSession = Depends(get_async_session)):
     return {"seeded": len(demos), "worker_ids": [d["worker_id"] for d in demos]}
 
 
+@router.post("/workers/{worker_id}/enroll")
+async def trigger_enrollment_mode(
+    worker_id: str,
+    session: AsyncSession = Depends(get_async_session)
+):
+    worker = await session.get(WorkerProfile, worker_id)
+    if not worker:
+        raise HTTPException(status_code=404, detail="Worker not found")
+    
+    # Set to in_progress. The next voice event in recognition.py will capture the fingerprint.
+    worker.enrollment_status = "in_progress"
+    worker.updated_at = datetime.utcnow()
+    await session.commit()
+    return {"status": "listening", "worker_id": worker_id}
+
+
 @router.post("/workers/{worker_id}/profile", response_model=Dict[str, Any])
 async def upsert_profile(
     worker_id: str,

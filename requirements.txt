@@ -19,7 +19,7 @@ pydub==0.25.1
 httpx==0.28.1
 tenacity==9.0.0
 
-numpy==2.2.5
+numpy
 
 # Speaker embeddings — install CPU-only torch first:
 #   pip install torch --index-url https://download.pytorch.org/whl/cpu

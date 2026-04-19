@@ -3,7 +3,7 @@ import json
 import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
-
+from sqlmodel.ext.asyncio.session import AsyncSession
 import httpx
 from tenacity import retry, stop_after_attempt, wait_exponential
 
@@ -20,6 +20,7 @@ async def recognize_command(
     content_type: str,
     worker_id: Optional[str],
     worker: Optional[WorkerProfile],
+    session: Optional[AsyncSession] = None,
 ) -> RecognitionResult:
     start = time.monotonic()
 
@@ -27,20 +28,41 @@ async def recognize_command(
     matched_command, text_confidence = fuzzy_match_command(transcribed)
     mapped_value = _canonical_value(matched_command)
 
-    speaker_confidence: Optional[float] = None
-    if worker and worker.embedding:
-        speaker_confidence = await asyncio.get_event_loop().run_in_executor(
-            _executor,
-            _cosine_similarity_sync,
-            audio_bytes,
-            content_type,
-            worker.embedding,
-        )
-
-    if speaker_confidence is not None:
-        overall_confidence = 0.6 * text_confidence + 0.4 * speaker_confidence
-    else:
-        overall_confidence = text_confidence
+    # 🔒 IDENTITY GATE: Check if the voice matches the worker profile
+    speaker_match_score: float = 1.0 # Default if no profile exists
+    
+    if worker:
+        # 1. HANDLE ENROLLMENT (First-time fingerprint capture)
+        if worker.enrollment_status == "in_progress":
+            from datetime import datetime
+            embedding = await asyncio.get_event_loop().run_in_executor(
+                _executor,
+                _compute_input_embedding,
+                audio_bytes,
+                content_type
+            )
+            if embedding:
+                worker.embedding = json.dumps(embedding)
+                worker.enrollment_status = "complete"
+                worker.updated_at = datetime.utcnow()
+                if session:
+                    await session.commit()
+                speaker_match_score = 1.0 # Perfect match for the enrollment sample
+        
+        # 2. VERIFY IDENTITY (Against existing fingerprint)
+        elif worker.embedding:
+            speaker_match_score = await asyncio.get_event_loop().run_in_executor(
+                _executor,
+                _cosine_similarity_sync,
+                audio_bytes,
+                content_type,
+                worker.embedding,
+            )
+            
+            # SYSTEM RIGIDITY: Require high speaker confidence (85%+)
+            if speaker_match_score < 0.85:
+                # logger.warning(f"FOREIGN VOICE DETECTED: Score {speaker_match_score:.2f} < 0.85")
+                matched_command = "UNAUTHORIZED_SPEAKER"
 
     processing_ms = int((time.monotonic() - start) * 1000)
 
@@ -49,8 +71,8 @@ async def recognize_command(
         matched_command=matched_command,
         mapped_value=mapped_value,
         text_confidence=round(text_confidence, 4),
-        speaker_confidence=round(speaker_confidence, 4) if speaker_confidence is not None else None,
-        overall_confidence=round(overall_confidence, 4),
+        speaker_confidence=round(float(speaker_match_score), 4),
+        overall_confidence=round(text_confidence, 4), 
         worker_id=worker_id,
         processing_ms=processing_ms,
     )

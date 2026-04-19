@@ -13,3 +13,7 @@ build/
 *.egg-info/
 .pytest_cache/
 .mypy_cache/
+
+.cache/
+venv/
+telemetry.log
