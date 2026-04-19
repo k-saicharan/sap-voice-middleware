@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>SAP Voice Middleware — Live Demo</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<style>
+  :root {
+    --bg: #0b1020;
+    --panel: #121938;
+    --panel-2: #0f1530;
+    --ink: #e7ecf5;
+    --muted: #8a94b8;
+    --accent: #62d3ff;
+    --ok: #4ade80;
+    --warn: #fbbf24;
+    --err: #f87171;
+    --border: #23305f;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font: 15px/1.45 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+    background: var(--bg); color: var(--ink);
+    min-height: 100vh;
+  }
+  header {
+    padding: 18px 24px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+    background: linear-gradient(180deg, #101637 0%, #0b1020 100%);
+  }
+  header h1 { margin: 0; font-size: 18px; letter-spacing: .3px; }
+  header .status { font-size: 13px; color: var(--muted); }
+  header .status .dot {
+    display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+    background: var(--err); margin-right: 6px; vertical-align: middle;
+  }
+  header .status.connected .dot { background: var(--ok); }
+  main {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 20px;
+    padding: 20px;
+  }
+  .panel {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+    padding: 18px; min-height: 60vh; display: flex; flex-direction: column;
+  }
+  .panel h2 { margin: 0 0 12px 0; font-size: 14px; color: var(--accent); letter-spacing: .5px; text-transform: uppercase; }
+  .panel .big {
+    font-family: ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    font-size: 28px; line-height: 1.3; word-break: break-word;
+    background: var(--panel-2); border: 1px solid var(--border);
+    border-radius: 10px; padding: 16px; min-height: 120px;
+    color: var(--ink);
+  }
+  .panel .meta { margin-top: 10px; font-size: 12px; color: var(--muted); }
+  .log {
+    margin-top: auto; padding-top: 10px; border-top: 1px dashed var(--border);
+    font-family: ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    font-size: 12px; color: var(--muted); max-height: 30vh; overflow-y: auto;
+  }
+  .log .entry { padding: 4px 0; border-bottom: 1px dotted #1d274d; }
+  .left .big  { border-left: 3px solid var(--warn); }
+  .right .big { border-left: 3px solid var(--ok); }
+  footer { padding: 8px 24px 20px; color: var(--muted); font-size: 12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>SAP Voice Middleware · Live Demo</h1>
+  <div id="status" class="status"><span class="dot"></span><span id="status-text">disconnected</span></div>
+</header>
+
+<main>
+  <section class="panel left">
+    <h2>WearHF Heard (raw Whisper output)</h2>
+    <div id="heard" class="big">—</div>
+    <div class="meta" id="heard-meta"></div>
+    <div id="heard-log" class="log"></div>
+  </section>
+
+  <section class="panel right">
+    <h2>SAP Received (after middleware correction)</h2>
+    <div id="sap" class="big">—</div>
+    <div class="meta" id="sap-meta"></div>
+    <div id="sap-log" class="log"></div>
+  </section>
+</main>
+
+<footer>ws://localhost:8001/telemetry · raw_intent ↔ corrected_command</footer>
+
+<script>
+(function () {
+  const statusEl = document.getElementById('status');
+  const statusTxt = document.getElementById('status-text');
+  const heardEl = document.getElementById('heard');
+  const heardMeta = document.getElementById('heard-meta');
+  const heardLog = document.getElementById('heard-log');
+  const sapEl = document.getElementById('sap');
+  const sapMeta = document.getElementById('sap-meta');
+  const sapLog = document.getElementById('sap-log');
+
+  function ts() {
+    const d = new Date();
+    return d.toTimeString().slice(0, 8);
+  }
+  function pushLog(el, text) {
+    const entry = document.createElement('div');
+    entry.className = 'entry';
+    entry.textContent = '[' + ts() + '] ' + text;
+    el.prepend(entry);
+  }
+
+  function connect() {
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+    const host = location.hostname || 'localhost';
+    const url = proto + '://' + host + ':8001/telemetry';
+    const ws = new WebSocket(url);
+
+    ws.onopen = () => {
+      statusEl.classList.add('connected');
+      statusTxt.textContent = 'connected';
+    };
+    ws.onclose = () => {
+      statusEl.classList.remove('connected');
+      statusTxt.textContent = 'disconnected — retrying…';
+      setTimeout(connect, 1500);
+    };
+    ws.onerror = () => { try { ws.close(); } catch (_) {} };
+    ws.onmessage = (ev) => {
+      let msg;
+      try { msg = JSON.parse(ev.data); } catch (_) { return; }
+      if (!msg || !msg.stage) return;
+
+      if (msg.stage === 'raw_intent') {
+        const text = msg.text || '';
+        heardEl.textContent = text || '—';
+        heardMeta.textContent = msg.prompt ? ('ITS prompt: ' + msg.prompt) : '';
+        pushLog(heardLog, 'raw_intent ← ' + JSON.stringify(text));
+      } else if (msg.stage === 'corrected_command') {
+        const text = msg.text || '';
+        sapEl.textContent = text || '—';
+        const parts = [];
+        if (msg.matched_command) parts.push('command=' + msg.matched_command);
+        if (msg.mapped_value)    parts.push('mapped=' + msg.mapped_value);
+        if (msg.confidence != null) parts.push('conf=' + msg.confidence);
+        sapMeta.textContent = parts.join('  ·  ');
+        pushLog(sapLog, 'corrected ← ' + JSON.stringify(text));
+      }
+    };
+  }
+  connect();
+})();
+</script>
+</body>
+</html>

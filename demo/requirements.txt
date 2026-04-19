@@ -1,0 +1,25 @@
+# Demo-only dependencies. The core middleware dependencies still come from
+# the top-level requirements.txt. These are the extra packages the
+# Mock WearHF orchestrator + Mock ITS Mobile server need.
+
+# Shared with the middleware (listed here so the demo can be installed standalone).
+fastapi==0.115.5
+uvicorn[standard]==0.32.1
+httpx==0.28.1
+
+# Mic capture (16 kHz / 16-bit / mono).
+sounddevice==0.5.1
+
+# Silero VAD (loaded via torch.hub at runtime — no extra pip package needed).
+torch>=2.2,<3
+
+# Numeric ops for VAD frame handling.
+numpy>=1.26
+
+# NOTE: whisper.cpp is not a Python package. Build it separately:
+#   git clone https://github.com/ggerganov/whisper.cpp
+#   cd whisper.cpp && make
+#   bash ./models/download-ggml-model.sh base.en
+# Then run the orchestrator with:
+#   --whisper-bin  ./build/bin/whisper-cli  (or ./main for older builds)
+#   --whisper-model ./models/ggml-base.en.bin
