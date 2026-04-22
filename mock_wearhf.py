@@ -139,10 +139,11 @@ async def run_transcription(audio_data):
         logger.info(f"Raw Whisper: '{transcribed_text}' (Prob: {probability:.2f}, WearHF Conf: {wearhf_confidence})")
         
         # Broadcast WEARHF_SPEECH_EVENT to telemetry (Always, even if confidence is low)
+        # Note: real WearHF is silent on no-match; we always broadcast for demo telemetry visibility.
         intent_payload = {
-            "intent": "com.realwear.wearhf.intent.action.SPEECH_EVENT",
+            "intent": "com.realwear.wearhf.intent.action.SPEECHEVENT",
             "com.realwear.wearhf.intent.extra.COMMAND": transcribed_text.upper(),
-            "com.realwear.wearhf.intent.extra.ORIGINAL_COMMAND": transcribed_text,
+            "com.realwear.wearhf.intent.extra.ORIGINALCOMMAND": transcribed_text,
             "com.realwear.wearhf.intent.extra.CONFIDENCE": wearhf_confidence,
             "extra.LOGPROB": round(float(avg_logprob), 4),
             "extra.PROCESS_TIME_MS": processing_time_ms
@@ -164,9 +165,9 @@ async def run_transcription(audio_data):
             resp = await client.post(
                 f"{MIDDLEWARE_URL}/workers/{WORKER_ID}/recognize",
                 json={
-                    "action": "com.realwear.wearhf.intent.action.SPEECH_EVENT",
+                    "action": "com.realwear.wearhf.intent.action.SPEECHEVENT",
                     "extras": {
-                        "com.realwear.wearhf.intent.extra.ORIGINAL_COMMAND": transcribed_text,
+                        "com.realwear.wearhf.intent.extra.ORIGINALCOMMAND": transcribed_text,
                         "com.realwear.wearhf.intent.extra.COMMAND": transcribed_text.upper(),
                         "com.realwear.wearhf.intent.extra.CONFIDENCE": wearhf_confidence
                     }

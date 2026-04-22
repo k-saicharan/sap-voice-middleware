@@ -18,8 +18,8 @@ router = APIRouter(tags=["recognition"])
 # the /recognize endpoint instead of raw audio. This lets the existing
 # RecognitionService + CommandService stay untouched while the offline
 # Whisper.cpp transcription happens upstream in the WearHF mock.
-_WEARHF_ACTION = "com.realwear.wearhf.intent.action.SPEECH_EVENT"
-_WEARHF_TEXT_KEY = "com.realwear.wearhf.intent.extra.ORIGINAL_COMMAND"
+_WEARHF_ACTION = "com.realwear.wearhf.intent.action.SPEECHEVENT"
+_WEARHF_TEXT_KEY = "com.realwear.wearhf.intent.extra.ORIGINALCOMMAND"
 _WEARHF_COMMAND_KEY = "com.realwear.wearhf.intent.extra.COMMAND"
 
 
