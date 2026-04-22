@@ -130,8 +130,19 @@ def _compute_embedding_sync(audio_paths: list[str]) -> list[float]:
     model_type = settings.EMBEDDING_MODEL
 
     if model_type == "mock":
+        import hashlib
         import random
-        vec = [random.gauss(0, 1) for _ in range(512)]
+        import struct
+        h = hashlib.sha256()
+        for path in audio_paths:
+            try:
+                with open(path, "rb") as f:
+                    h.update(f.read())
+            except OSError:
+                pass
+        seed = struct.unpack("<I", h.digest()[:4])[0]
+        rng = random.Random(seed)
+        vec = [rng.gauss(0, 1) for _ in range(512)]
         norm = sum(x ** 2 for x in vec) ** 0.5
         return [x / norm for x in vec]
 
@@ -147,12 +158,9 @@ def _compute_embedding_sync(audio_paths: list[str]) -> list[float]:
 def _embed_speechbrain(audio_paths: list[str]) -> list[float]:
     import numpy as np
     import torchaudio
-    from speechbrain.inference.speaker import EncoderClassifier
+    from app.services.recognition import _get_speechbrain_classifier
 
-    classifier = EncoderClassifier.from_hparams(
-        source="speechbrain/spkrec-ecapa-voxceleb",
-        run_opts={"device": "cpu"},
-    )
+    classifier = _get_speechbrain_classifier()
     embeddings = []
     for path in audio_paths:
         signal, sr = torchaudio.load(path)
@@ -170,13 +178,9 @@ def _embed_speechbrain(audio_paths: list[str]) -> list[float]:
 
 def _embed_pyannote(audio_paths: list[str]) -> list[float]:
     import numpy as np
-    from pyannote.audio import Model, Inference
+    from app.services.recognition import _get_pyannote_inference
 
-    model = Model.from_pretrained(
-        "pyannote/embedding",
-        use_auth_token=settings.HUGGINGFACE_TOKEN,
-    )
-    inference = Inference(model, window="whole")
+    inference = _get_pyannote_inference()
     embeddings = [inference(p) for p in audio_paths]
     mean_emb = np.mean(embeddings, axis=0)
     norm = np.linalg.norm(mean_emb)
