@@ -1,3 +1,5 @@
+import json
+
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from typing import Optional
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -30,10 +32,15 @@ def _result_from_wearhf_intent(body: dict, worker_id: Optional[str], worker: Opt
 
     start = time.monotonic()
     text = (body.get("extras") or {}).get(_WEARHF_TEXT_KEY, "") or ""
-    # In a real SPEECH_EVENT, WearHF provides the matched command, but we want our middleware to do the matching
-    # based on what Whisper heard (ORIGINAL_COMMAND). We will use the ORIGINAL_COMMAND for fuzzy matching to simulate
-    # how it works when we bypass the WearHF grammar engine and use Whisper.
-    matched_command, text_confidence = fuzzy_match_command(text)
+
+    word_map: Optional[dict] = None
+    if worker and worker.mappings:
+        try:
+            word_map = json.loads(worker.mappings) or None
+        except (ValueError, TypeError):
+            pass
+
+    matched_command, text_confidence = fuzzy_match_command(text, word_map=word_map)
     from app.services.command import SAP_COMMANDS
 
     if matched_command.startswith("QUANTITY_"):
@@ -42,16 +49,10 @@ def _result_from_wearhf_intent(body: dict, worker_id: Optional[str], worker: Opt
         variants = SAP_COMMANDS.get(matched_command, [])
         mapped_value = variants[0].upper() if variants else matched_command
 
-    # Identity simulation for JSON/Intent path
+    # Speaker identity cannot be verified on the JSON/intent path — no audio bytes are
+    # received, only the transcribed text. Callers that need identity gating must use
+    # the multipart audio upload endpoint instead.
     speaker_confidence = None
-    if worker:
-        if worker.enrollment_status == "complete":
-            # If the user has a fingerprint, we simulate a 98% match 
-            # (In a real system, the orchestrator would have sent the audio bytes)
-            speaker_confidence = 0.9832
-        else:
-            # Not enrolled
-            speaker_confidence = None
 
     processing_ms = int((time.monotonic() - start) * 1000)
     return RecognitionResult(

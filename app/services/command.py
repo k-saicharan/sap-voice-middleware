@@ -71,11 +71,16 @@ def _extract_number(text: str) -> Optional[int]:
     
     return total if found else None
 
-def fuzzy_match_command(transcribed: str) -> Tuple[str, float]:
+def fuzzy_match_command(transcribed: str, word_map: Optional[Dict[str, str]] = None) -> Tuple[str, float]:
     """Return (command_key, confidence 0.0-1.0) for the closest SAP command match."""
     text = transcribed.strip().lower()
     if not text:
         return ("UNKNOWN", 0.0)
+
+    # Apply per-worker locale substitutions (e.g. "DEZ" → "10" for Portuguese workers)
+    if word_map:
+        for src, dst in word_map.items():
+            text = re.sub(r'\b' + re.escape(src.lower()) + r'\b', dst.lower(), text)
 
     # PRIORITY 1: Explicit Number Check (Pick cases)
     # This avoids "Pick 23" being matched to "Pick 2"

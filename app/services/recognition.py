@@ -1,5 +1,6 @@
 import asyncio
 import json
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
@@ -14,6 +15,39 @@ from app.services.command import SAP_COMMANDS, fuzzy_match_command
 
 _executor = ThreadPoolExecutor(max_workers=2)
 
+_speechbrain_lock = threading.Lock()
+_speechbrain_classifier = None
+
+_pyannote_lock = threading.Lock()
+_pyannote_inference = None
+
+
+def _get_speechbrain_classifier():
+    global _speechbrain_classifier
+    if _speechbrain_classifier is None:
+        with _speechbrain_lock:
+            if _speechbrain_classifier is None:
+                from speechbrain.inference.speaker import EncoderClassifier
+                _speechbrain_classifier = EncoderClassifier.from_hparams(
+                    source="speechbrain/spkrec-ecapa-voxceleb",
+                    run_opts={"device": "cpu"},
+                )
+    return _speechbrain_classifier
+
+
+def _get_pyannote_inference():
+    global _pyannote_inference
+    if _pyannote_inference is None:
+        with _pyannote_lock:
+            if _pyannote_inference is None:
+                from pyannote.audio import Model, Inference
+                model = Model.from_pretrained(
+                    "pyannote/embedding",
+                    use_auth_token=settings.HUGGINGFACE_TOKEN,
+                )
+                _pyannote_inference = Inference(model, window="whole")
+    return _pyannote_inference
+
 
 async def recognize_command(
     audio_bytes: bytes,
@@ -25,7 +59,15 @@ async def recognize_command(
     start = time.monotonic()
 
     transcribed = await _transcribe(audio_bytes, content_type)
-    matched_command, text_confidence = fuzzy_match_command(transcribed)
+
+    word_map: Optional[dict] = None
+    if worker and worker.mappings:
+        try:
+            word_map = json.loads(worker.mappings) or None
+        except (ValueError, TypeError):
+            pass
+
+    matched_command, text_confidence = fuzzy_match_command(transcribed, word_map=word_map)
     mapped_value = _canonical_value(matched_command)
 
     # 🔒 IDENTITY GATE: Check if the voice matches the worker profile
@@ -72,7 +114,7 @@ async def recognize_command(
         mapped_value=mapped_value,
         text_confidence=round(text_confidence, 4),
         speaker_confidence=round(float(speaker_match_score), 4),
-        overall_confidence=round(text_confidence, 4), 
+        overall_confidence=round(text_confidence * speaker_match_score, 4),
         worker_id=worker_id,
         processing_ms=processing_ms,
     )
@@ -115,8 +157,12 @@ def _compute_input_embedding(audio_bytes: bytes, content_type: str) -> Optional[
     model_type = settings.EMBEDDING_MODEL
 
     if model_type == "mock":
+        import hashlib
         import random
-        vec = [random.gauss(0, 1) for _ in range(512)]
+        import struct
+        seed = struct.unpack("<I", hashlib.sha256(audio_bytes).digest()[:4])[0]
+        rng = random.Random(seed)
+        vec = [rng.gauss(0, 1) for _ in range(512)]
         norm = sum(x ** 2 for x in vec) ** 0.5
         return [x / norm for x in vec]
 
@@ -133,12 +179,8 @@ def _embed_input_speechbrain(audio_bytes: bytes, content_type: str):
     import io
     import numpy as np
     import torchaudio
-    from speechbrain.inference.speaker import EncoderClassifier
 
-    classifier = EncoderClassifier.from_hparams(
-        source="speechbrain/spkrec-ecapa-voxceleb",
-        run_opts={"device": "cpu"},
-    )
+    classifier = _get_speechbrain_classifier()
     signal, sr = torchaudio.load(io.BytesIO(audio_bytes))
     if sr != 16000:
         signal = torchaudio.functional.resample(signal, sr, 16000)
@@ -150,13 +192,8 @@ def _embed_input_speechbrain(audio_bytes: bytes, content_type: str):
 def _embed_input_pyannote(audio_bytes: bytes, content_type: str):
     import io
     import numpy as np
-    from pyannote.audio import Model, Inference
 
-    model = Model.from_pretrained(
-        "pyannote/embedding",
-        use_auth_token=settings.HUGGINGFACE_TOKEN,
-    )
-    inference = Inference(model, window="whole")
+    inference = _get_pyannote_inference()
     emb = inference({"waveform": io.BytesIO(audio_bytes), "sample_rate": 16000})
     norm = np.linalg.norm(emb)
     return (emb / norm).tolist() if norm > 0 else emb.tolist()
